@@ -1,107 +1,136 @@
-# MAC-unit-MUTIPLY-ACCUMALATE-UNIT
-FPGA-based matrix multiplication accelerator implemented in Verilog HDL.  The design uses a pipelined MAC architecture with synchronous dual-port RAM,  explicit valid control, and cycle-accurate dataflow. Verified using a  self-checking testbench and designed to be timing-clean under STA.
-# Pipelined MAC Unit for Matrix Multiplication Accelerator (FPGA)
+# FPGA-Based MAC Unit with Synchronous RAM for Matrix Multiplication
 
-This repository contains the design and verification of a **pipelined Multiply–Accumulate (MAC) unit** implemented in **Verilog HDL**, intended as the core compute block for a hardware matrix multiplication accelerator.
+This repository contains the design and verification of a **pipelined Multiply–Accumulate (MAC) unit** integrated with a **synchronous dual-port RAM**, implemented in **Verilog HDL**.  
+Together, these blocks form the core compute and storage infrastructure for a hardware matrix multiplication accelerator.
 
-The MAC unit performs multiplication and accumulation across clock cycles using explicit valid control and synchronous reset. The design emphasizes **correct RTL behavior, timing safety, and robust handling of sequential data dependencies**, making it suitable for FPGA-based compute accelerators.
-
----
-
-## 🔧 MAC Unit Overview
-
-The MAC unit computes:
-
-result = result + (a × b)
-
-Key characteristics:
-- Fully synchronous design
-- Valid-driven accumulation
-- Internal accumulator register
-- Clean reset behavior
-- Timing-safe pipeline structure
-
-The unit is designed to be reusable and scalable as a building block for larger compute engines.
+The project focuses on **correct RTL behavior, pipeline control, timing awareness, and memory interfacing**, rather than only functional correctness.
 
 ---
 
-## 🐞 Bugs Identified and Fixed (MAC Unit Only)
+## 🔧 Design Overview
 
-During development and verification, multiple **critical RTL-level bugs** were identified and fixed in the MAC unit. These fixes were essential for correctness, timing safety, and reliable reuse.
+### MAC Unit
+- Performs: result = result + (a × b)
+- Uses valid-driven accumulation
+- Internal registered accumulator
+- Explicit reset and pipeline staging
+- Designed for reuse across multiple computations
 
-### 1️⃣ Accumulator Using Stale Product Value
+### RAM
+- Synchronous dual-port RAM
+- Independent read/write ports
+- Single-clock operation
+- Used for operand storage and result write-back
+
+---
+
+## 🐞 Bugs Identified and Fixed
+
+### 🔹 MAC Unit Bugs
+
+#### 1️⃣ Accumulator Using Stale Product Value
 **Bug:**  
-The accumulator was updated in the same clock cycle as the product computation, causing the accumulator to use the **previous cycle’s product** instead of the current one.
+The accumulator was updated in the same cycle as multiplication, causing it to use the **previous cycle’s product**.
 
 **Fix:**  
-Separated the design into pipeline stages using an intermediate register (`product`) and a valid-stage signal, ensuring accumulation occurs **only after the correct product is registered**.
+Separated multiply and accumulate stages using registered intermediate values and valid propagation.
 
 ---
 
-### 2️⃣ Missing Pipeline Control Between Multiply and Accumulate
+#### 2️⃣ Missing Pipeline Control Between Multiply and Accumulate
 **Bug:**  
-Multiply and accumulate operations were implicitly assumed to complete in one cycle, leading to incorrect results when the multiplier latency exceeded one clock cycle.
+The design assumed multiplication and accumulation completed in one cycle, ignoring multiplier latency.
 
 **Fix:**  
-Introduced explicit pipeline staging and valid propagation so that accumulation only occurs when the multiplication result is guaranteed to be ready.
+Introduced explicit pipeline staging and delayed accumulation until the product was guaranteed to be valid.
 
 ---
 
-### 3️⃣ Incorrect Use of `if-else` Causing Skipped Accumulation
+#### 3️⃣ Incorrect `if–else` Control Logic
 **Bug:**  
-An `if (valid_in) ... else if (valid_stage1)` structure prevented accumulation from executing in the intended cycle due to mutually exclusive conditions.
+An `if (valid_in) else if (valid_stage)` structure prevented accumulation from executing in the intended cycle.
 
 **Fix:**  
-Restructured control logic so that accumulation depends on a **registered valid signal**, not on the same-cycle condition, preserving correct sequential behavior.
+Redesigned control flow so accumulation depends only on **registered valid signals**, not same-cycle conditions.
 
 ---
 
-### 4️⃣ “Everyone Is Ready” Handshake Assumption
+#### 4️⃣ Improper Assumption of Simultaneous Readiness
 **Bug:**  
-The MAC unit assumed operands, product, and accumulator were all valid simultaneously, ignoring real pipeline delays.
+The MAC assumed operands, product, and accumulator were all valid in the same cycle.
 
 **Fix:**  
-Implemented explicit valid signaling to model real hardware timing and prevent accidental accumulation of invalid data.
+Added explicit valid signaling to correctly model real hardware timing behavior.
 
 ---
 
-### 5️⃣ Accumulator Not Properly Cleared Between Operations
+#### 5️⃣ Accumulator Not Cleared Between Independent Operations
 **Bug:**  
-The accumulator retained values across independent computations, causing incorrect results when the MAC was reused.
+Accumulator retained previous results when starting a new computation.
 
 **Fix:**  
-Ensured reset (or clear) explicitly initializes the accumulator before each new computation sequence.
+Ensured reset/clear explicitly initializes the accumulator before each new operation.
 
 ---
 
-### 6️⃣ Misinterpretation of Non-Blocking Assignment Timing
+#### 6️⃣ Misunderstanding of Non-Blocking Assignment Semantics
 **Bug:**  
-The design relied on updated register values within the same clock cycle, violating RTL semantics and causing simulation–hardware mismatch.
+The design relied on updated register values within the same clock cycle.
 
 **Fix:**  
-Reworked logic assuming all RHS evaluations use **previous-cycle values**, aligning RTL behavior with actual hardware operation.
+Reworked logic assuming all RHS evaluations use **previous-cycle values**, matching real hardware behavior.
+
+---
+
+### 🔹 RAM Bugs
+
+#### 7️⃣ Incorrect Assumption of Combinational Read
+**Bug:**  
+The testbench assumed RAM read data was available in the same cycle as the address change.
+
+**Fix:**  
+Corrected control logic to account for **synchronous read latency**, adding explicit clock-cycle waits.
+
+---
+
+#### 8️⃣ Read and Write Timing Collision
+**Bug:**  
+Read and write operations were assumed to occur independently without considering clock-edge ordering.
+
+**Fix:**  
+Aligned all RAM accesses to clock edges and ensured writes occur only on `posedge clk`.
+
+---
+
+#### 9️⃣ Address Change Without Clock Synchronization
+**Bug:**  
+Addresses were changed without guaranteeing a clock edge before sampling output data.
+
+**Fix:**  
+Introduced clock-aligned address updates and enforced a full-cycle delay before data usage.
 
 ---
 
 ## 🧪 Verification
 
-The MAC unit is verified using a cycle-accurate Verilog testbench that:
-- Drives operands with valid control
-- Exercises multi-cycle accumulation
-- Resets and reuses the MAC
-- Confirms correctness across multiple input sequences
+A cycle-accurate Verilog testbench verifies:
+- MAC accumulation correctness across multiple cycles
+- Proper reset and reuse of the MAC
+- Correct RAM read/write behavior
+- Correct interaction between MAC and RAM timing
 
 All fixes were validated through simulation and static timing analysis (STA).
 
 ---
 
-## 📈 Why This Matters
+## 📈 Why This Project Matters
 
-This MAC unit demonstrates:
-- Strong understanding of RTL timing semantics
-- Proper pipeline and valid-signal design
-- Real-world debugging of hardware race conditions
-- Readiness for integration into larger accelerators
+This project demonstrates:
+- Deep understanding of RTL timing semantics
+- Correct use of synchronous memory
+- Real-world hardware debugging skills
+- Awareness of STA and pipeline correctness
+- Ability to build reusable compute blocks
 
 ---
 
